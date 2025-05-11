@@ -1,8 +1,14 @@
 #!/bin/bash
 set -e
 
-# Set working directory to the location of the zip file
-cd /apps/logAnalyzer
+echo "Current working directory: $(pwd)"
+
+if [ -f all-mpnet-base.zip ]; then
+    echo "Found model zip: all-mpnet-base.zip"
+else
+    echo "ERROR: all-mpnet-base.zip not found in $(pwd)"
+    exit 1
+fi
 
 # Create the target directory if it doesn't exist
 mkdir -p breakfix-kb-model/all-mpnet-base-v2
