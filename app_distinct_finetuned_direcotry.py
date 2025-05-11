@@ -6,48 +6,58 @@ import pathlib, os, uuid, json, logging
 from datetime import datetime
 from typing import Optional, Dict, List
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # Paths & constants
-# ----------------------------------------------------------------------
-MODEL_NAME     = "sentence-transformers/all-MiniLM-L6-v2"
-CACHE_DIR      = pathlib.Path(os.getenv("HUGGINGFACE_HUB_CACHE", "/models"))
-RUNS_DIR       = CACHE_DIR / "fine-tuned-runs"        # each run saved here
+# ======================================================================
+LOCAL_MODELS_DIR = pathlib.Path(r"breakfix-kb-model")
+
+# base model location
+BASE_MODEL_DIR = LOCAL_MODELS_DIR / "all-mpnet-base-v2"
+
+# every fine-tune run is saved to its own timestamped folder
+RUNS_DIR = BASE_MODEL_DIR / "fine-tuned-runs"
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ----------------------------------------------------------------------
+# (optional backward-compat) legacy single folder, if you already have one
+LEGACY_DIR = BASE_MODEL_DIR / "fine-tuned"
+
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
+
+# ======================================================================
 # Logging
-# ----------------------------------------------------------------------
+# ======================================================================
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # Helper: pick latest fine-tuned dir (if any)
-# ----------------------------------------------------------------------
+# ======================================================================
 def latest_run_dir() -> Optional[pathlib.Path]:
     candidates = sorted([p for p in RUNS_DIR.iterdir() if p.is_dir()],
                         key=lambda p: p.name,
                         reverse=True)
     return candidates[0] if candidates else None
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # Model load at startup
-# ----------------------------------------------------------------------
+# ======================================================================
 try:
     load_path = latest_run_dir()
-    model = SentenceTransformer(str(load_path)) if load_path else SentenceTransformer(MODEL_NAME)
-    logger.info(f"Model loaded from: {load_path if load_path else MODEL_NAME}")
+    model = SentenceTransformer(str(load_path)) if load_path else SentenceTransformer(BASE_MODEL_DIR)
+    logger.info(f"Model loaded from: {load_path if load_path else BASE_MODEL_DIR}")
 except Exception as e:
     logger.exception("Failed to load model")
     raise
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # FastAPI app
-# ----------------------------------------------------------------------
+# ======================================================================
 app = FastAPI()
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # Pydantic models
-# ----------------------------------------------------------------------
+# ======================================================================
 class Query(BaseModel):
     text: str
 
@@ -74,9 +84,9 @@ knowledge_base: List[KnowledgeBaseItem] = [
      "resolution": "Run npm install -g npm@latest."},
 ]
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # Background trainer + job tracker
-# ----------------------------------------------------------------------
+# ======================================================================
 jobs: Dict[str, Dict] = {}          # job_id -> {"status":..., "msg":...}
 
 def _new_output_dir() -> pathlib.Path:
@@ -111,9 +121,9 @@ def fine_tune(job_id: str, pairs: List[TrainingPair]):
         logger.exception("Training failed")
         jobs[job_id] = {"status": "failed", "msg": str(e)}
 
-# ----------------------------------------------------------------------
+# ======================================================================
 # API endpoints
-# ----------------------------------------------------------------------
+# ======================================================================
 @app.post("/train")
 def train(payload: TrainingData, bg: BackgroundTasks):
     if not payload.data:
